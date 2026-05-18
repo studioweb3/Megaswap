@@ -54,25 +54,29 @@
             </div>
 
             <div id="bridge-dest-box" class="hidden flex items-center justify-between gap-2 mb-4">
-                <div class="bg-slate-900 border border-emerald-500/30 rounded-2xl p-3 flex-1 relative overflow-hidden">
+                <div class="bg-slate-900 border border-emerald-500/30 rounded-2xl p-3 flex-1 relative overflow-hidden focus-within:border-emerald-400 transition">
                     <div class="absolute top-0 right-0 w-16 h-16 bg-emerald-500/10 rounded-full blur-xl"></div>
                     <span class="text-[10px] text-emerald-400 uppercase tracking-widest font-bold block mb-1">From</span>
-                    <div class="flex items-center gap-2 text-white font-bold text-sm">
-                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_#10B981]"></span> ARC
-                    </div>
+                    <select id="bridge-from-select" class="bg-transparent text-white font-bold text-sm w-full outline-none cursor-pointer appearance-none">
+                        <option value="0x4cef52" class="bg-slate-900">ARC Testnet</option>
+                        <option value="0xaa36a7" class="bg-slate-900">ETH Sepolia</option>
+                        <option value="0x14a34" class="bg-slate-900">Base Sepolia</option>
+                        <option value="0x66eee" class="bg-slate-900">Arb Sepolia</option>
+                    </select>
                 </div>
                 
-                <div class="flex flex-col items-center justify-center text-slate-500 px-1">
-                    <span class="text-lg text-sky-400">➡️</span>
+                <div id="bridge-swap-networks" class="flex flex-col items-center justify-center p-2 bg-slate-800 border border-slate-700 rounded-xl cursor-pointer hover:bg-slate-700 transition shadow-lg">
+                    <span class="text-sky-400 font-bold">⇆</span>
                 </div>
 
                 <div class="bg-slate-900 border border-indigo-500/30 rounded-2xl p-3 flex-1 relative overflow-hidden focus-within:border-indigo-400 transition">
                     <div class="absolute top-0 right-0 w-16 h-16 bg-indigo-500/10 rounded-full blur-xl"></div>
                     <span class="text-[10px] text-indigo-400 uppercase tracking-widest font-bold block mb-1">To</span>
-                    <select id="bridge-network-select" class="bg-transparent text-white font-bold text-sm w-full outline-none cursor-pointer appearance-none">
-                        <option value="sepolia" class="bg-slate-900">ETH Sepolia</option>
-                        <option value="base-testnet" class="bg-slate-900">Base Sepolia</option>
-                        <option value="arbitrum-testnet" class="bg-slate-900">Arb Sepolia</option>
+                    <select id="bridge-to-select" class="bg-transparent text-white font-bold text-sm w-full outline-none cursor-pointer appearance-none">
+                        <option value="0xaa36a7" class="bg-slate-900">ETH Sepolia</option>
+                        <option value="0x4cef52" class="bg-slate-900">ARC Testnet</option>
+                        <option value="0x14a34" class="bg-slate-900">Base Sepolia</option>
+                        <option value="0x66eee" class="bg-slate-900">Arb Sepolia</option>
                     </select>
                 </div>
             </div>
@@ -132,18 +136,22 @@
     </div>
 
     <script>
-        // === CONFIGURATIONS RÉSEAUX ===
+        // === CONFIGURATIONS RÉSEAUX & CONTRATS ===
         const CHAIN_BASE_MAINNET = '0x2105'; 
-        const CHAIN_ARC_TESTNET = '0x4cef52'; // ID Officiel pour Arc Testnet (5042002)
-
-        // Adresses Base Mainnet
+        
+        // Base Mainnet (Swap)
         const BPUMP_ADDRESS = '0x1763c231662d7dc4be28fc169d1056bdcce8cad6';
         const WETH_ADDRESS = '0x4200000000000000000000000000000000000006'; 
         const AERO_ROUTER = '0xcf77a3ba9a5ca399b7c97c74d54e5b1beb874e43';
         const AERO_FACTORY = '0x420dd381b31aef6683db6b902084cb0ffece40da';
 
-        // Constantes Jetons ARC Testnet
-        const ARC_USDC_ADDRESS = '0x3600000000000000000000000000000000000000'; 
+        // Registre des Testnets pour le Bridge (USDC Officiel Circle)
+        const BRIDGE_NETWORKS = {
+            '0x4cef52': { name: 'ARC Testnet', usdc: '0x3600000000000000000000000000000000000000', rpc: 'https://rpc.testnet.arc.network', decimals: 6 },
+            '0xaa36a7': { name: 'ETH Sepolia', usdc: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', rpc: 'https://rpc2.sepolia.org', decimals: 6 },
+            '0x14a34': { name: 'Base Sepolia', usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', rpc: 'https://sepolia.base.org', decimals: 6 },
+            '0x66eee': { name: 'Arb Sepolia', usdc: '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d', rpc: 'https://sepolia-rollup.arbitrum.io/rpc', decimals: 6 }
+        };
 
         // ABIs
         const erc20ABI = [
@@ -163,7 +171,12 @@
         const panelTitle = document.getElementById('panel-title');
         const networkBadge = document.getElementById('network-badge');
         const networkBadgeText = document.getElementById('network-badge-text');
+        
         const bridgeDestBox = document.getElementById('bridge-dest-box');
+        const bridgeFromSelect = document.getElementById('bridge-from-select');
+        const bridgeToSelect = document.getElementById('bridge-to-select');
+        const bridgeSwapNetworks = document.getElementById('bridge-swap-networks');
+        
         const flipContainer = document.getElementById('flip-container');
         const poweredFooter = document.getElementById('powered-footer');
         const slippageBox = document.getElementById('slippage-box');
@@ -191,7 +204,7 @@
         let debounceTimer;
         let currentAmountReceivedWei = null; 
         let isEthToBpump = true; 
-        let balances = { ETH: "0.00", BPUMP: "0.00", ARC_USDC: "0.00" };
+        let balances = { ETH: "0.00", BPUMP: "0.00", USDC: "0.00" };
 
         const ETH_HTML = `<img src="https://assets.coingecko.com/coins/images/279/small/ethereum.png" class="w-6 h-6 rounded-full inline" alt="ETH">`;
         const BPUMP_HTML = `🚀`;
@@ -231,18 +244,47 @@
             
             panelTitle.innerText = "Megaswap Bridge";
             bridgeDestBox.classList.remove('hidden');
+            bridgeDestBox.classList.add('flex');
             flipContainer.classList.add('hidden'); 
             slippageBox.classList.add('hidden');   
             poweredFooter.innerHTML = "ARC Cross-Chain Protocol • Testnet Mode";
             
             networkBadge.className = "bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded-full px-3 py-1 text-xs font-bold flex items-center gap-1";
-            networkBadgeText.innerText = "ARC Testnet";
+            networkBadgeText.innerText = BRIDGE_NETWORKS[bridgeFromSelect.value].name;
 
             topIcon.innerHTML = USDC_HTML; topSymbol.innerText = "USDC";
             bottomIcon.innerHTML = USDC_HTML; bottomSymbol.innerText = "USDC";
             
             resetInputs();
             checkNetworkAndLoad();
+        });
+
+        // Gestion du Menu "From"
+        bridgeFromSelect.addEventListener('change', async () => {
+            if (bridgeFromSelect.value === bridgeToSelect.value) {
+                // Empêcher d'avoir le même réseau de chaque côté
+                bridgeToSelect.selectedIndex = (bridgeToSelect.selectedIndex + 1) % bridgeToSelect.options.length;
+            }
+            networkBadgeText.innerText = BRIDGE_NETWORKS[bridgeFromSelect.value].name;
+            await checkNetworkAndLoad();
+        });
+        
+        bridgeToSelect.addEventListener('change', () => {
+             if (bridgeFromSelect.value === bridgeToSelect.value) {
+                bridgeFromSelect.selectedIndex = (bridgeFromSelect.selectedIndex + 1) % bridgeFromSelect.options.length;
+                networkBadgeText.innerText = BRIDGE_NETWORKS[bridgeFromSelect.value].name;
+                checkNetworkAndLoad();
+            }
+        });
+
+        // Bouton d'inversion des réseaux
+        bridgeSwapNetworks.addEventListener('click', async () => {
+            const temp = bridgeFromSelect.value;
+            bridgeFromSelect.value = bridgeToSelect.value;
+            bridgeToSelect.value = temp;
+            
+            networkBadgeText.innerText = BRIDGE_NETWORKS[bridgeFromSelect.value].name;
+            await checkNetworkAndLoad();
         });
 
         function resetInputs() {
@@ -263,7 +305,8 @@
 
         async function checkNetworkAndLoad() {
             if (!window.ethereum || !userAddress) return;
-            const target = (currentTab === 'swap') ? CHAIN_BASE_MAINNET : CHAIN_ARC_TESTNET;
+            // Le réseau ciblé dépend de l'onglet ET du menu déroulant
+            const target = (currentTab === 'swap') ? CHAIN_BASE_MAINNET : bridgeFromSelect.value;
             
             try {
                 const chainId = await window.ethereum.request({ method: 'eth_chainId' });
@@ -275,16 +318,17 @@
                         });
                     } catch (switchError) {
                         if (switchError.code === 4902) {
+                            // Demande d'ajout dynamique si le testnet n'est pas connu
                             try {
-                                if (target === CHAIN_ARC_TESTNET) {
+                                if (currentTab === 'bridge') {
+                                    const netConfig = BRIDGE_NETWORKS[target];
                                     await window.ethereum.request({
                                         method: 'wallet_addEthereumChain',
                                         params: [{
-                                            chainId: CHAIN_ARC_TESTNET,
-                                            chainName: 'Arc Testnet',
-                                            nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
-                                            rpcUrls: ['https://rpc.testnet.arc.network'],
-                                            blockExplorerUrls: ['https://testnet.arcscan.app']
+                                            chainId: target,
+                                            chainName: netConfig.name,
+                                            nativeCurrency: { name: 'ETH/USDC', symbol: 'ETH', decimals: 18 },
+                                            rpcUrls: [netConfig.rpc]
                                         }]
                                     });
                                 } else {
@@ -312,17 +356,26 @@
             } catch (e) {
                 console.log("Erreur de réseau:", e);
                 statusMsg.style.color = "#F59E0B";
-                statusMsg.innerText = `⚠️ Connected (Wrong Network for ${currentTab}).`;
+                statusMsg.innerText = `⚠️ Connected (Wrong Network for selected tab).`;
             }
             await fetchBalances();
         }
 
         // ==========================================
-        // LECTURE DYNAMIQUE DES SOLDES (MAJ USDC 6 Décimales)
+        // LECTURE DYNAMIQUE DES SOLDES
         // ==========================================
         async function fetchBalances() {
             if (!userAddress || !provider) return;
             try {
+                // On vérifie que le provider est bien sur la bonne chaîne avant de lire
+                const network = await provider.getNetwork();
+                const currentChainHex = '0x' + network.chainId.toString(16);
+                const targetChain = (currentTab === 'swap') ? CHAIN_BASE_MAINNET : bridgeFromSelect.value;
+                
+                if (currentChainHex !== targetChain) {
+                    throw new Error("Provider not on target chain yet.");
+                }
+
                 if (currentTab === 'swap') {
                     const balanceWei = await provider.getBalance(userAddress);
                     balances.ETH = parseFloat(ethers.formatEther(balanceWei)).toFixed(4);
@@ -334,16 +387,18 @@
                     topBalanceDisplay.innerText = isEthToBpump ? balances.ETH : balances.BPUMP;
                     bottomBalanceDisplay.innerText = isEthToBpump ? balances.BPUMP : balances.ETH;
                 } else {
-                    const usdcContract = new ethers.Contract(ARC_USDC_ADDRESS, erc20ABI, provider);
+                    // Lecture dynamique du contrat USDC selon le réseau sélectionné !
+                    const usdcAddress = BRIDGE_NETWORKS[targetChain].usdc;
+                    const usdcContract = new ethers.Contract(usdcAddress, erc20ABI, provider);
                     const usdcWei = await usdcContract.balanceOf(userAddress);
                     
-                    balances.ARC_USDC = parseFloat(ethers.formatUnits(usdcWei, 6)).toFixed(2);
+                    balances.USDC = parseFloat(ethers.formatUnits(usdcWei, 6)).toFixed(2);
                     
-                    topBalanceDisplay.innerText = balances.ARC_USDC; 
-                    bottomBalanceDisplay.innerText = balances.ARC_USDC;
+                    topBalanceDisplay.innerText = balances.USDC; 
+                    bottomBalanceDisplay.innerText = balances.USDC; // On assume que le solde de réception sera affiché ultérieurement, pour l'instant on garde le solde source
                 }
             } catch (error) {
-                console.error("Balance Error:", error);
+                console.log("Lecture du solde repoussée (Réseau en cours de changement ou contrat inexistant sur cette chaine).");
                 if (currentTab === 'bridge') {
                      topBalanceDisplay.innerText = "0.00"; 
                      bottomBalanceDisplay.innerText = "0.00";
@@ -400,7 +455,11 @@
                 }
             } else {
                 bottomOutput.value = amountIn;
-                rateDisplay.innerText = "1 USDC (ARC) = 1.00 USDC (Dest)";
+                
+                const fromName = BRIDGE_NETWORKS[bridgeFromSelect.value].name.split(' ')[0];
+                const toName = BRIDGE_NETWORKS[bridgeToSelect.value].name.split(' ')[0];
+                rateDisplay.innerText = `1 USDC (${fromName}) = 1.00 USDC (${toName})`;
+                
                 statusMsg.style.color = "#10B981"; statusMsg.innerText = "✅ Bridge route verified!";
             }
         }
@@ -414,7 +473,7 @@
                     const signer = await provider.getSigner();
                     const routerContract = new ethers.Contract(AERO_ROUTER, routerABI, signer);
                     const amountInWei = ethers.parseEther(topInput.value.toString());
-                    const amountOutMinWei = (currentAmountReceivedWei * 95n) / 100n; // Slippage 5%
+                    const amountOutMinWei = (currentAmountReceivedWei * 95n) / 100n; 
                     const deadline = Math.floor(Date.now() / 1000) + (60 * 20);
 
                     let tx;
@@ -471,18 +530,16 @@
                     updateUI();
                 }
             } else {
-                // SIMULATION DU BRIDGE (En attendant le Smart Contract CCTP)
+                // SIMULATION DU BRIDGE (En attendant CCTP)
                 actionBtn.disabled = true;
                 actionBtn.innerText = "⏳ Bridging...";
                 statusMsg.style.color = "#38BDF8";
-                statusMsg.innerText = "⚡ Interacting with ARC Gateway...";
+                statusMsg.innerText = "⚡ Initiating secure cross-chain transfer...";
                 
-                // On simule une attente de 3 secondes pour l'UX
                 setTimeout(() => {
                     statusMsg.style.color = "#10B981";
-                    statusMsg.innerText = "🎉 Bridge Initiated! (Awaiting Relayer)";
+                    statusMsg.innerText = "🎉 Bridge Initiated! (Awaiting Relayer Validation)";
                     
-                    // On vide les cases et on remet le bouton à zéro
                     topInput.value = ""; 
                     bottomOutput.value = "";
                     actionBtn.disabled = false;
@@ -561,6 +618,11 @@
             if (window.ethereum) {
                 const accounts = await window.ethereum.request({ method: 'eth_accounts' });
                 if (accounts.length > 0) { userAddress = accounts[0]; await checkNetworkAndLoad(); updateUI(); }
+                
+                // Écoute les changements de réseau dans MetaMask
+                window.ethereum.on('chainChanged', () => {
+                    window.location.reload();
+                });
             }
         });
     </script>
