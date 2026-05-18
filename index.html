@@ -67,7 +67,7 @@
                     <span class="text-xs text-slate-400 mono">Balance: <span id="bpump-balance">0.00</span></span>
                 </div>
                 <div class="flex items-center justify-between gap-4">
-                    <input type="text" id="bpump-output" placeholder="0.0" readonly class="bg-transparent text-3xl font-bold text-slate-300 w-full outline-none cursor-not-allowed" />
+                    <input type="text" id="bpump-output" placeholder="0.0" readonly class="bg-transparent text-3xl font-bold text-emerald-400 w-full outline-none cursor-not-allowed" />
                     <div class="flex items-center gap-2 bg-slate-800 rounded-xl px-4 py-2 border border-slate-600 shrink-0">
                         <span class="text-xl">🚀</span>
                         <span class="font-bold text-white">BPUMP</span>
@@ -81,8 +81,8 @@
                     <span id="rate-display">Fetching...</span>
                 </div>
                 <div class="flex justify-between">
-                    <span>Network Fee (Base)</span>
-                    <span class="text-sky-400">~$0.01</span>
+                    <span>Max Slippage</span>
+                    <span class="text-sky-400">5.00%</span>
                 </div>
             </div>
 
@@ -96,29 +96,21 @@
     </div>
 
     <script>
-        // === CONFIGURATION BASE & AERODROME ===
-        const TARGET_CHAIN_ID = '0x2105'; // Base Mainnet
-        
-        // Adresses des contrats
+        // === CONFIGURATION ===
+        const TARGET_CHAIN_ID = '0x2105'; 
         const BPUMP_ADDRESS = '0x1763c231662D7dc4Be28fC169D1056BdCce8cAd6';
         const WETH_ADDRESS = '0x4200000000000000000000000000000000000006'; 
-        
-        // Aerodrome Router & Factory
         const AERO_ROUTER = '0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43';
         const AERO_FACTORY = '0x420DD381b31aEf6683db6b902084cB0FFECe40Da';
 
-        // === ABIs (La carte d'identité des contrats) ===
-        const erc20ABI = [
-            "function balanceOf(address owner) view returns (uint256)",
-            "function decimals() view returns (uint8)"
-        ];
-
-        // L'ABI spécifique d'Aerodrome pour interroger le prix
+        // === ABIs ===
+        const erc20ABI = ["function balanceOf(address owner) view returns (uint256)"];
         const routerABI = [
-            "function getAmountsOut(uint256 amountIn, tuple(address from, address to, bool stable, address factory)[] routes) view returns (uint256[] amounts)"
+            "function getAmountsOut(uint256 amountIn, tuple(address from, address to, bool stable, address factory)[] routes) view returns (uint256[] amounts)",
+            "function swapExactETHForTokens(uint amountOutMin, tuple(address from, address to, bool stable, address factory)[] routes, address to, uint deadline) payable returns (uint[] amounts)"
         ];
 
-        // === DOM ELEMENTS ===
+        // === VARIABLES ===
         const actionBtn = document.getElementById('action-btn');
         const statusMsg = document.getElementById('status-msg');
         const ethInput = document.getElementById('eth-input');
@@ -130,12 +122,11 @@
 
         let userAddress = null;
         let provider = null;
-        let debounceTimer; // Pour éviter de spammer la blockchain à chaque frappe
+        let debounceTimer;
+        let currentAmountReceivedWei = null; // Sauvegarde du prix pour le Swap
 
         async function initProvider() {
-            if (window.ethereum) {
-                provider = new ethers.BrowserProvider(window.ethereum);
-            }
+            if (window.ethereum) provider = new ethers.BrowserProvider(window.ethereum);
         }
 
         async function checkNetwork() {
@@ -147,63 +138,111 @@
         async function fetchBalances() {
             if (!userAddress || !provider) return;
             try {
-                // Solde ETH
                 const balanceWei = await provider.getBalance(userAddress);
-                const balanceEth = ethers.formatEther(balanceWei);
-                ethBalanceDisplay.innerText = parseFloat(balanceEth).toFixed(4);
+                ethBalanceDisplay.innerText = parseFloat(ethers.formatEther(balanceWei)).toFixed(4);
 
-                // Solde BPUMP
                 const bpumpContract = new ethers.Contract(BPUMP_ADDRESS, erc20ABI, provider);
                 const bpumpWei = await bpumpContract.balanceOf(userAddress);
-                const bpumpBalance = ethers.formatEther(bpumpWei); // On suppose 18 décimales
-                bpumpBalanceDisplay.innerText = parseFloat(bpumpBalance).toFixed(2);
+                bpumpBalanceDisplay.innerText = parseFloat(ethers.formatEther(bpumpWei)).toFixed(2);
             } catch (error) {
-                console.error("Erreur de solde:", error);
+                console.error("Balance Error:", error);
             }
         }
 
-        // LE COEUR DE L'ORACLE : Interroger Aerodrome
+        // ==========================================
+        // 1. L'ORACLE (Lecture du prix)
+        // ==========================================
         async function fetchPrice(amountInEth) {
             if (!provider) return;
-            
             try {
                 bpumpOutput.value = "Calculating...";
                 rateDisplay.innerText = "Fetching liquidity...";
+                currentAmountReceivedWei = null;
 
                 const routerContract = new ethers.Contract(AERO_ROUTER, routerABI, provider);
-                
-                // Convertir l'entrée en Wei (18 zéros)
                 const amountInWei = ethers.parseEther(amountInEth.toString());
 
-                // Création de la "Route" Aerodrome (WETH -> BPUMP)
-                // stable: false (car c'est une pool volatile classique)
-                const route = [{
-                    from: WETH_ADDRESS,
-                    to: BPUMP_ADDRESS,
-                    stable: false,
-                    factory: AERO_FACTORY
-                }];
+                // FIX : Format de tableau strict exigé par Ethers pour la structure Route
+                const route = [[WETH_ADDRESS, BPUMP_ADDRESS, false, AERO_FACTORY]];
 
-                // Appel au Router
                 const amountsOut = await routerContract.getAmountsOut(amountInWei, route);
+                currentAmountReceivedWei = amountsOut[1]; 
                 
-                // amountsOut est un tableau : [montant_depart, montant_arrivee]
-                const amountReceivedWei = amountsOut[1];
-                const amountReceivedFormatted = ethers.formatEther(amountReceivedWei);
-
-                // Affichage du résultat
-                bpumpOutput.value = parseFloat(amountReceivedFormatted).toFixed(4);
+                const amountReceivedFormatted = ethers.formatEther(currentAmountReceivedWei);
+                bpumpOutput.value = parseFloat(amountReceivedFormatted).toFixed(2);
                 
-                // Calcul du ratio pour l'affichage en bas
                 const ratio = parseFloat(amountReceivedFormatted) / parseFloat(amountInEth);
-                rateDisplay.innerText = `1 ETH = ${ratio.toFixed(2)} BPUMP`;
-
+                rateDisplay.innerText = `1 ETH = ${ratio.toFixed(0)} BPUMP`;
+                
+                statusMsg.style.color = "#10B981";
+                statusMsg.innerText = "✅ Ready to swap!";
             } catch (error) {
-                console.error("Erreur de prix:", error);
+                console.error("Oracle Error:", error);
                 bpumpOutput.value = "0.0";
-                rateDisplay.innerText = "No liquidity found or error";
+                rateDisplay.innerText = "Error calculating price";
                 statusMsg.style.color = "#EF4444";
-                statusMsg.innerText = "⚠️ Liquidity Pool not found on Aerodrome.";
+                const errReason = error.reason || error.message || "Unknown error";
+                statusMsg.innerText = `⚠️ ${errReason.substring(0, 30)}...`;
+            }
+        }
+
+        // ==========================================
+        // 2. LE SWAP (L'Achat sur la blockchain)
+        // ==========================================
+        async function executeSwap(amountInEth) {
+            if (!provider || !currentAmountReceivedWei) return;
+            try {
+                actionBtn.disabled = true;
+                actionBtn.innerText = "⏳ Confirm in MetaMask...";
+                statusMsg.style.color = "#38BDF8";
+                statusMsg.innerText = "Please confirm the transaction...";
+
+                const signer = await provider.getSigner();
+                const routerContract = new ethers.Contract(AERO_ROUTER, routerABI, signer);
+                
+                const amountInWei = ethers.parseEther(amountInEth.toString());
+                
+                // Protection Slippage (5%)
+                // On accepte de recevoir jusqu'à 5% de moins que prévu si le prix bouge
+                const amountOutMinWei = (currentAmountReceivedWei * 95n) / 100n;
+                
+                const route = [[WETH_ADDRESS, BPUMP_ADDRESS, false, AERO_FACTORY]];
+                
+                // Deadline : 20 minutes (standard DEX)
+                const deadline = Math.floor(Date.now() / 1000) + (60 * 20);
+
+                const tx = await routerContract.swapExactETHForTokens(
+                    amountOutMinWei,
+                    route,
+                    userAddress,
+                    deadline,
+                    { value: amountInWei }
+                );
+
+                statusMsg.innerText = "⏳ Swapping on Base Mainnet...";
+                actionBtn.innerText = "Processing...";
+                
+                await tx.wait(); // On attend que la blockchain valide
+
+                statusMsg.style.color = "#10B981";
+                statusMsg.innerText = "🎉 Swap Successful!";
+                ethInput.value = "";
+                bpumpOutput.value = "";
+                
+                await fetchBalances(); // Met à jour les compteurs
+                updateUI();
+                
+            } catch (error) {
+                console.error("Swap Error:", error);
+                statusMsg.style.color = "#EF4444";
+                if(error.code === "ACTION_REJECTED") {
+                    statusMsg.innerText = "❌ Transaction cancelled by user.";
+                } else {
+                    statusMsg.innerText = "❌ Swap failed (Price impact too high?)";
+                }
+            } finally {
+                actionBtn.disabled = false;
+                updateUI();
             }
         }
 
@@ -216,7 +255,7 @@
 
             if (ethInput.value > 0) {
                 actionBtn.innerText = "Swap";
-                actionBtn.className = "w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-4 px-4 rounded-xl transition shadow-lg shadow-blue-500/30 text-lg uppercase tracking-wider";
+                actionBtn.className = "w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-4 px-4 rounded-xl transition shadow-lg shadow-blue-500/30 text-lg uppercase tracking-wider shadow-[0_0_20px_rgba(59,130,246,0.5)]";
                 txDetails.classList.remove('hidden');
                 txDetails.classList.add('flex');
             } else {
@@ -227,26 +266,20 @@
             }
         }
 
-        // Ecoute de l'input utilisateur avec délai (Debounce) pour ne pas spammer la blockchain
         ethInput.addEventListener('input', () => {
             const val = ethInput.value;
             updateUI();
-            
             clearTimeout(debounceTimer);
             if (val > 0) {
-                debounceTimer = setTimeout(() => {
-                    fetchPrice(val);
-                }, 500); // Attend 500ms après la dernière frappe pour lancer le calcul
+                debounceTimer = setTimeout(() => { fetchPrice(val); }, 500);
             } else {
                 bpumpOutput.value = "";
+                currentAmountReceivedWei = null;
             }
         });
 
         actionBtn.addEventListener('click', async () => {
-            if (!window.ethereum) {
-                statusMsg.innerText = "🦊 Please install MetaMask.";
-                return;
-            }
+            if (!window.ethereum) { statusMsg.innerText = "🦊 Please install MetaMask."; return; }
 
             if (!userAddress) {
                 try {
@@ -256,29 +289,25 @@
                     
                     const isOnBase = await checkNetwork();
                     if (!isOnBase) {
-                        await window.ethereum.request({
-                            method: 'wallet_switchEthereumChain',
-                            params: [{ chainId: TARGET_CHAIN_ID }],
-                        });
+                        await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: TARGET_CHAIN_ID }] });
                     }
                     
                     await initProvider();
-                    await fetchBalances(); // Charge les soldes
+                    await fetchBalances();
                     
                     statusMsg.style.color = "#10B981";
                     statusMsg.innerText = `🟢 Connected: ${userAddress.substring(0,6)}...${userAddress.substring(38)}`;
                     updateUI();
                 } catch (e) {
                     statusMsg.style.color = "#EF4444";
-                    statusMsg.innerText = "❌ Connection rejected or network error.";
+                    statusMsg.innerText = "❌ Connection rejected.";
                     updateUI();
                 }
                 return;
             }
 
-            if (ethInput.value > 0) {
-                statusMsg.style.color = "#38BDF8";
-                statusMsg.innerText = "⏳ Swap feature coming in Step 3...";
+            if (ethInput.value > 0 && currentAmountReceivedWei) {
+                executeSwap(ethInput.value);
             }
         });
 
@@ -290,7 +319,6 @@
                     userAddress = accounts[0];
                     statusMsg.style.color = "#10B981";
                     statusMsg.innerText = `🟢 Connected: ${userAddress.substring(0,6)}...${userAddress.substring(38)}`;
-                    
                     await fetchBalances();
                     updateUI();
                 }
