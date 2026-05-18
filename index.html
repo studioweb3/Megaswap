@@ -39,7 +39,12 @@
 
             <div class="flex justify-between items-center mb-6">
                 <h1 class="text-2xl font-bold text-white">Megaswap</h1>
-                <button class="text-slate-400 hover:text-white transition p-2 bg-slate-800 rounded-xl border border-slate-700">⚙️</button>
+                <div class="flex gap-2">
+                    <button id="disconnect-btn" class="hidden text-xs text-slate-400 hover:text-red-400 transition px-3 py-2 bg-slate-800 rounded-xl border border-slate-700 flex items-center gap-1">
+                        <span>🔌</span> Disconnect
+                    </button>
+                    <button class="text-slate-400 hover:text-white transition p-2 bg-slate-800 rounded-xl border border-slate-700">⚙️</button>
+                </div>
             </div>
 
             <div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 mb-2 focus-within:border-sky-500/50 transition">
@@ -105,14 +110,12 @@
         const AERO_FACTORY = '0x420dd381b31aef6683db6b902084cb0ffece40da';
 
         // === ABIs ===
-        // Ajout de 'allowance' et 'approve' pour autoriser la vente du BPUMP
         const erc20ABI = [
             "function balanceOf(address owner) view returns (uint256)",
             "function allowance(address owner, address spender) view returns (uint256)",
             "function approve(address spender, uint256 amount) returns (bool)"
         ];
         
-        // Ajout de 'swapExactTokensForETH' pour la vente
         const routerABI = [
             "function getAmountsOut(uint256 amountIn, tuple(address from, address to, bool stable, address factory)[] routes) view returns (uint256[] amounts)",
             "function swapExactETHForTokens(uint amountOutMin, tuple(address from, address to, bool stable, address factory)[] routes, address to, uint deadline) payable returns (uint[] amounts)",
@@ -121,6 +124,7 @@
 
         // === DOM ELEMENTS ===
         const actionBtn = document.getElementById('action-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
         const statusMsg = document.getElementById('status-msg');
         const topInput = document.getElementById('top-input');
         const bottomOutput = document.getElementById('bottom-output');
@@ -129,7 +133,6 @@
         const txDetails = document.getElementById('tx-details');
         const rateDisplay = document.getElementById('rate-display');
         
-        // Elements dynamiques pour le Flip
         const btnFlip = document.getElementById('btn-flip');
         const topIcon = document.getElementById('top-icon');
         const topSymbol = document.getElementById('top-symbol');
@@ -141,10 +144,7 @@
         let provider = null;
         let debounceTimer;
         let currentAmountReceivedWei = null; 
-        
-        // true = Achat (ETH -> BPUMP), false = Vente (BPUMP -> ETH)
         let isEthToBpump = true; 
-        
         let balances = { ETH: "0.00", BPUMP: "0.00" };
 
         const ETH_HTML = `<img src="https://assets.coingecko.com/coins/images/279/small/ethereum.png" class="w-6 h-6 rounded-full inline" alt="ETH">`;
@@ -190,13 +190,9 @@
         // LA BASCULE (FLIP)
         // ==========================================
         btnFlip.addEventListener('click', () => {
-            // Animation visuelle
             btnFlip.classList.toggle('flipped');
-            
-            // Inverser l'état
             isEthToBpump = !isEthToBpump;
             
-            // Mettre à jour les logos et textes
             if (isEthToBpump) {
                 topIcon.innerHTML = ETH_HTML; topSymbol.innerText = "ETH";
                 bottomIcon.innerHTML = BPUMP_HTML; bottomSymbol.innerText = "BPUMP";
@@ -205,10 +201,26 @@
                 bottomIcon.innerHTML = ETH_HTML; bottomSymbol.innerText = "ETH";
             }
             
-            // Réinitialiser les champs et mettre à jour les soldes
             topInput.value = "";
             bottomOutput.value = "";
             currentAmountReceivedWei = null;
+            
+            updateUIBalances();
+            updateUI();
+        });
+
+        // ==========================================
+        // DÉCONNEXION (RESET UI)
+        // ==========================================
+        disconnectBtn.addEventListener('click', () => {
+            userAddress = null;
+            // On réinitialise les compteurs virtuellement
+            balances = { ETH: "0.00", BPUMP: "0.00" };
+            currentAmountReceivedWei = null;
+            topInput.value = "";
+            bottomOutput.value = "";
+            statusMsg.style.color = "#64748B"; // Slate-500
+            statusMsg.innerText = "🔌 Disconnected from interface.";
             
             updateUIBalances();
             updateUI();
@@ -227,7 +239,6 @@
                 const routerContract = new ethers.Contract(AERO_ROUTER, routerABI, provider);
                 const amountInWei = ethers.parseEther(amountIn.toString());
 
-                // La Route change en fonction du sens du swap !
                 let route;
                 if (isEthToBpump) {
                     route = [[WETH_ADDRESS, BPUMP_ADDRESS, false, AERO_FACTORY]];
@@ -248,7 +259,7 @@
                 
                 statusMsg.style.color = "#10B981";
                 statusMsg.innerText = "✅ Ready to swap!";
-                updateUI(); // Met à jour le bouton pour vérifier si un Approve est nécessaire
+                updateUI();
             } catch (error) {
                 console.error("Oracle Error:", error);
                 bottomOutput.value = "0.0";
@@ -274,7 +285,6 @@
                 let tx;
 
                 if (isEthToBpump) {
-                    // ACHAT CLASSIQUE (ETH -> BPUMP)
                     statusMsg.style.color = "#38BDF8";
                     statusMsg.innerText = "Please confirm the ETH transaction...";
                     actionBtn.innerText = "⏳ Confirming...";
@@ -284,7 +294,6 @@
                         amountOutMinWei, route, userAddress, deadline, { value: amountInWei }
                     );
                 } else {
-                    // VENTE (BPUMP -> ETH) : Nécessite un Approve !
                     const bpumpContract = new ethers.Contract(BPUMP_ADDRESS, erc20ABI, signer);
                     const allowance = await bpumpContract.allowance(userAddress, AERO_ROUTER);
 
@@ -330,15 +339,18 @@
 
         async function updateUI() {
             if (!userAddress) {
+                disconnectBtn.classList.add('hidden'); // Cache le bouton disconnect
                 actionBtn.innerText = "Connect Wallet";
                 actionBtn.className = "w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-4 px-4 rounded-xl transition shadow-lg shadow-sky-500/20 text-lg uppercase tracking-wider";
+                txDetails.classList.add('hidden'); txDetails.classList.remove('flex');
                 return;
             }
+
+            disconnectBtn.classList.remove('hidden'); // Affiche le bouton disconnect
 
             if (topInput.value > 0) {
                 txDetails.classList.remove('hidden'); txDetails.classList.add('flex');
                 
-                // Si on vend du BPUMP, on vérifie si on a besoin du bouton "Approve"
                 if (!isEthToBpump && provider) {
                     try {
                         const bpumpContract = new ethers.Contract(BPUMP_ADDRESS, erc20ABI, provider);
