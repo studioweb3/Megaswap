@@ -240,7 +240,7 @@
         }
 
         // ==========================================
-        // CONNEXION & RÉSEAUX (AVEC AJOUT AUTOMATIQUE)
+        // CONNEXION & RÉSEAUX
         // ==========================================
         async function initProvider() {
             if (window.ethereum) provider = new ethers.BrowserProvider(window.ethereum);
@@ -254,13 +254,11 @@
                 const chainId = await window.ethereum.request({ method: 'eth_chainId' });
                 if (chainId !== target) {
                     try {
-                        // 1. Tente de changer de réseau
                         await window.ethereum.request({
                             method: 'wallet_switchEthereumChain',
                             params: [{ chainId: target }],
                         });
                     } catch (switchError) {
-                        // 2. Si le réseau n'est pas dans le MetaMask du joueur (Code 4902)
                         if (switchError.code === 4902) {
                             try {
                                 if (target === CHAIN_ARC_TESTNET) {
@@ -287,10 +285,10 @@
                                     });
                                 }
                             } catch (addError) {
-                                throw addError; // L'utilisateur a refusé l'ajout
+                                throw addError;
                             }
                         } else {
-                            throw switchError; // L'utilisateur a refusé le switch
+                            throw switchError; 
                         }
                     }
                 }
@@ -304,6 +302,9 @@
             await fetchBalances();
         }
 
+        // ==========================================
+        // LECTURE DYNAMIQUE DES SOLDES (MAJ USDC 6 Décimales)
+        // ==========================================
         async function fetchBalances() {
             if (!userAddress || !provider) return;
             try {
@@ -316,14 +317,23 @@
                     balances.BPUMP = parseFloat(ethers.formatEther(bpumpWei)).toFixed(2);
                     
                     topBalanceDisplay.innerText = isEthToBpump ? balances.ETH : balances.BPUMP;
-                    // FIX : L'erreur de syntaxe était ici (remplacement de ":" par "?")
                     bottomBalanceDisplay.innerText = isEthToBpump ? balances.BPUMP : balances.ETH;
                 } else {
-                    topBalanceDisplay.innerText = "100.00"; 
-                    bottomBalanceDisplay.innerText = "100.00";
+                    // Lecture de l'USDC sur ARC avec ethers.formatUnits pour 6 décimales
+                    const usdcContract = new ethers.Contract(ARC_USDC_ADDRESS, erc20ABI, provider);
+                    const usdcWei = await usdcContract.balanceOf(userAddress);
+                    
+                    balances.ARC_USDC = parseFloat(ethers.formatUnits(usdcWei, 6)).toFixed(2);
+                    
+                    topBalanceDisplay.innerText = balances.ARC_USDC; 
+                    bottomBalanceDisplay.innerText = balances.ARC_USDC;
                 }
             } catch (error) {
                 console.error("Balance Error:", error);
+                if (currentTab === 'bridge') {
+                     topBalanceDisplay.innerText = "0.00"; 
+                     bottomBalanceDisplay.innerText = "0.00";
+                }
             }
         }
 
