@@ -119,7 +119,7 @@
     <script>
         // === CONFIGURATIONS RÉSEAUX ===
         const CHAIN_BASE_MAINNET = '0x2105'; 
-        const CHAIN_ARC_TESTNET = '0x1F4'; 
+        const CHAIN_ARC_TESTNET = '0x4cef52'; // ID Officiel pour Arc Testnet (5042002)
 
         // Adresses Base Mainnet
         const BPUMP_ADDRESS = '0x1763c231662d7dc4be28fc169d1056bdcce8cad6';
@@ -240,7 +240,7 @@
         }
 
         // ==========================================
-        // CONNEXION & RÉSEAUX (CORRIGÉ)
+        // CONNEXION & RÉSEAUX (AVEC AJOUT AUTOMATIQUE)
         // ==========================================
         async function initProvider() {
             if (window.ethereum) provider = new ethers.BrowserProvider(window.ethereum);
@@ -253,15 +253,51 @@
             try {
                 const chainId = await window.ethereum.request({ method: 'eth_chainId' });
                 if (chainId !== target) {
-                    await window.ethereum.request({
-                        method: 'wallet_switchEthereumChain',
-                        params: [{ chainId: target }],
-                    });
+                    try {
+                        // 1. Tente de changer de réseau
+                        await window.ethereum.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ chainId: target }],
+                        });
+                    } catch (switchError) {
+                        // 2. Si le réseau n'est pas dans le MetaMask du joueur (Code 4902)
+                        if (switchError.code === 4902) {
+                            try {
+                                if (target === CHAIN_ARC_TESTNET) {
+                                    await window.ethereum.request({
+                                        method: 'wallet_addEthereumChain',
+                                        params: [{
+                                            chainId: CHAIN_ARC_TESTNET,
+                                            chainName: 'Arc Testnet',
+                                            nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+                                            rpcUrls: ['https://rpc.testnet.arc.network'],
+                                            blockExplorerUrls: ['https://testnet.arcscan.app']
+                                        }]
+                                    });
+                                } else {
+                                    await window.ethereum.request({
+                                        method: 'wallet_addEthereumChain',
+                                        params: [{
+                                            chainId: CHAIN_BASE_MAINNET,
+                                            chainName: 'Base',
+                                            nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+                                            rpcUrls: ['https://mainnet.base.org'],
+                                            blockExplorerUrls: ['https://basescan.org']
+                                        }]
+                                    });
+                                }
+                            } catch (addError) {
+                                throw addError; // L'utilisateur a refusé l'ajout
+                            }
+                        } else {
+                            throw switchError; // L'utilisateur a refusé le switch
+                        }
+                    }
                 }
                 statusMsg.style.color = "#10B981";
                 statusMsg.innerText = `🟢 Connected: ${userAddress.substring(0,6)}...${userAddress.substring(38)}`;
             } catch (e) {
-                console.log("Erreur switch réseau:", e);
+                console.log("Erreur de réseau:", e);
                 statusMsg.style.color = "#F59E0B";
                 statusMsg.innerText = `⚠️ Connected (Wrong Network for ${currentTab}).`;
             }
@@ -280,6 +316,7 @@
                     balances.BPUMP = parseFloat(ethers.formatEther(bpumpWei)).toFixed(2);
                     
                     topBalanceDisplay.innerText = isEthToBpump ? balances.ETH : balances.BPUMP;
+                    // FIX : L'erreur de syntaxe était ici (remplacement de ":" par "?")
                     bottomBalanceDisplay.innerText = isEthToBpump ? balances.BPUMP : balances.ETH;
                 } else {
                     topBalanceDisplay.innerText = "100.00"; 
@@ -344,7 +381,7 @@
             }
         }
 
-        // SWAP / BRIDGE ACTIONS (MOTEUR COMPLET RESTAURÉ)
+        // SWAP / BRIDGE ACTIONS (MOTEUR COMPLET)
         async function executeAction() {
             if (currentTab === 'swap') {
                 if (!provider || !currentAmountReceivedWei) return;
@@ -415,7 +452,7 @@
             }
         }
 
-        // UI MANAGEMENT & METAMASK LISTENERS (CORRIGÉ)
+        // UI MANAGEMENT & METAMASK LISTENERS
         async function updateUI() {
             if (!userAddress) {
                 disconnectBtn.classList.add('hidden');
@@ -428,7 +465,6 @@
             if (topInput.value > 0) {
                 txDetails.classList.remove('hidden');
                 
-                // Vérification de l'Approve pour la vente de BPUMP
                 if (currentTab === 'swap' && !isEthToBpump && provider) {
                     try {
                         const bpumpContract = new ethers.Contract(BPUMP_ADDRESS, erc20ABI, provider);
@@ -459,7 +495,6 @@
             }
         });
 
-        // Connexion unifiée et robuste
         actionBtn.addEventListener('click', async () => {
             if (!window.ethereum) { statusMsg.innerText = "🦊 Please install MetaMask."; return; }
 
