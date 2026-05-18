@@ -145,12 +145,12 @@
         const AERO_ROUTER = '0xcf77a3ba9a5ca399b7c97c74d54e5b1beb874e43';
         const AERO_FACTORY = '0x420dd381b31aef6683db6b902084cb0ffece40da';
 
-        // Registre des Testnets pour le Bridge (USDC Officiel Circle)
+        // Registre des Testnets pour le Bridge (AVEC RPC PUBLICS ROBUSTES)
         const BRIDGE_NETWORKS = {
             '0x4cef52': { name: 'ARC Testnet', usdc: '0x3600000000000000000000000000000000000000', rpc: 'https://rpc.testnet.arc.network', decimals: 6 },
-            '0xaa36a7': { name: 'ETH Sepolia', usdc: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', rpc: 'https://rpc2.sepolia.org', decimals: 6 },
-            '0x14a34': { name: 'Base Sepolia', usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', rpc: 'https://sepolia.base.org', decimals: 6 },
-            '0x66eee': { name: 'Arb Sepolia', usdc: '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d', rpc: 'https://sepolia-rollup.arbitrum.io/rpc', decimals: 6 }
+            '0xaa36a7': { name: 'ETH Sepolia', usdc: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', rpc: 'https://ethereum-sepolia-rpc.publicnode.com', decimals: 6 },
+            '0x14a34': { name: 'Base Sepolia', usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', rpc: 'https://base-sepolia-rpc.publicnode.com', decimals: 6 },
+            '0x66eee': { name: 'Arb Sepolia', usdc: '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d', rpc: 'https://arbitrum-sepolia-rpc.publicnode.com', decimals: 6 }
         };
 
         // ABIs
@@ -360,7 +360,7 @@
         }
 
         // ==========================================
-        // LECTURE DYNAMIQUE DES SOLDES (MULTI-CHAIN)
+        // LECTURE DYNAMIQUE DES SOLDES
         // ==========================================
         async function fetchBalances() {
             if (!userAddress || !provider) return;
@@ -384,27 +384,27 @@
                     topBalanceDisplay.innerText = isEthToBpump ? balances.ETH : balances.BPUMP;
                     bottomBalanceDisplay.innerText = isEthToBpump ? balances.BPUMP : balances.ETH;
                 } else {
-                    // 1. LECTURE DU RÉSEAU SOURCE (Via MetaMask)
+                    // 1. Lecture du réseau Source (Depuis MetaMask)
                     const usdcAddress = BRIDGE_NETWORKS[targetChain].usdc;
                     const usdcContract = new ethers.Contract(usdcAddress, erc20ABI, provider);
                     const usdcWei = await usdcContract.balanceOf(userAddress);
                     balances.USDC = parseFloat(ethers.formatUnits(usdcWei, 6)).toFixed(2);
                     topBalanceDisplay.innerText = balances.USDC; 
 
-                    // 2. LECTURE DU RÉSEAU DE DESTINATION (En arrière-plan via RPC)
+                    // 2. Lecture du réseau Destination (Fantôme via RPC optimisé)
                     try {
                         const destChainId = bridgeToSelect.value;
                         const destConfig = BRIDGE_NETWORKS[destChainId];
                         
-                        // Création d'un Provider "fantôme" qui lit l'autre blockchain
-                        const destProvider = new ethers.JsonRpcProvider(destConfig.rpc);
+                        // L'astuce Number() force ethers.js à ne pas faire de requête réseau préalable pour deviner l'ID
+                        const destProvider = new ethers.JsonRpcProvider(destConfig.rpc, Number(destChainId));
                         const destContract = new ethers.Contract(destConfig.usdc, erc20ABI, destProvider);
                         const destWei = await destContract.balanceOf(userAddress);
                         
                         bottomBalanceDisplay.innerText = parseFloat(ethers.formatUnits(destWei, 6)).toFixed(2);
                     } catch (destError) {
-                        console.log("Impossible de lire le solde de destination:", destError);
-                        bottomBalanceDisplay.innerText = "???";
+                        console.log("Impossible de lire le solde de destination (CORS/RPC Error):", destError);
+                        bottomBalanceDisplay.innerText = "N/A"; 
                     }
                 }
             } catch (error) {
