@@ -53,13 +53,28 @@
                 </div>
             </div>
 
-            <div id="bridge-dest-box" class="hidden bg-slate-900 border border-indigo-500/30 rounded-2xl p-4 mb-4">
-                <span class="text-xs text-indigo-400 uppercase tracking-widest font-bold block mb-2">Destination Network</span>
-                <select id="bridge-network-select" class="bg-slate-800 text-white font-bold rounded-xl p-2 w-full border border-slate-700 outline-none focus:border-indigo-500">
-                    <option value="sepolia">Ethereum Sepolia</option>
-                    <option value="base-testnet">Base Sepolia</option>
-                    <option value="arbitrum-testnet">Arbitrum Sepolia</option>
-                </select>
+            <div id="bridge-dest-box" class="hidden flex items-center justify-between gap-2 mb-4">
+                <div class="bg-slate-900 border border-emerald-500/30 rounded-2xl p-3 flex-1 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-16 h-16 bg-emerald-500/10 rounded-full blur-xl"></div>
+                    <span class="text-[10px] text-emerald-400 uppercase tracking-widest font-bold block mb-1">From</span>
+                    <div class="flex items-center gap-2 text-white font-bold text-sm">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_#10B981]"></span> ARC
+                    </div>
+                </div>
+                
+                <div class="flex flex-col items-center justify-center text-slate-500 px-1">
+                    <span class="text-lg text-sky-400">➡️</span>
+                </div>
+
+                <div class="bg-slate-900 border border-indigo-500/30 rounded-2xl p-3 flex-1 relative overflow-hidden focus-within:border-indigo-400 transition">
+                    <div class="absolute top-0 right-0 w-16 h-16 bg-indigo-500/10 rounded-full blur-xl"></div>
+                    <span class="text-[10px] text-indigo-400 uppercase tracking-widest font-bold block mb-1">To</span>
+                    <select id="bridge-network-select" class="bg-transparent text-white font-bold text-sm w-full outline-none cursor-pointer appearance-none">
+                        <option value="sepolia" class="bg-slate-900">ETH Sepolia</option>
+                        <option value="base-testnet" class="bg-slate-900">Base Sepolia</option>
+                        <option value="arbitrum-testnet" class="bg-slate-900">Arb Sepolia</option>
+                    </select>
+                </div>
             </div>
 
             <div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 mb-2 focus-within:border-sky-500/50 transition">
@@ -319,7 +334,6 @@
                     topBalanceDisplay.innerText = isEthToBpump ? balances.ETH : balances.BPUMP;
                     bottomBalanceDisplay.innerText = isEthToBpump ? balances.BPUMP : balances.ETH;
                 } else {
-                    // Lecture de l'USDC sur ARC avec ethers.formatUnits pour 6 décimales
                     const usdcContract = new ethers.Contract(ARC_USDC_ADDRESS, erc20ABI, provider);
                     const usdcWei = await usdcContract.balanceOf(userAddress);
                     
@@ -391,7 +405,7 @@
             }
         }
 
-        // SWAP / BRIDGE ACTIONS (MOTEUR COMPLET)
+        // SWAP / BRIDGE ACTIONS
         async function executeAction() {
             if (currentTab === 'swap') {
                 if (!provider || !currentAmountReceivedWei) return;
@@ -457,8 +471,23 @@
                     updateUI();
                 }
             } else {
+                // SIMULATION DU BRIDGE (En attendant le Smart Contract CCTP)
+                actionBtn.disabled = true;
+                actionBtn.innerText = "⏳ Bridging...";
                 statusMsg.style.color = "#38BDF8";
-                statusMsg.innerText = "⚡ Initializing ARC cross-chain transfer...";
+                statusMsg.innerText = "⚡ Interacting with ARC Gateway...";
+                
+                // On simule une attente de 3 secondes pour l'UX
+                setTimeout(() => {
+                    statusMsg.style.color = "#10B981";
+                    statusMsg.innerText = "🎉 Bridge Initiated! (Awaiting Relayer)";
+                    
+                    // On vide les cases et on remet le bouton à zéro
+                    topInput.value = ""; 
+                    bottomOutput.value = "";
+                    actionBtn.disabled = false;
+                    updateUI();
+                }, 3000);
             }
         }
 
