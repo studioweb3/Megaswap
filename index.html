@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Swap | Based Pump (BPUMP)</title>
+    <title>Megaswap | Based Pump (BPUMP)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700&family=DM+Mono&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
@@ -12,7 +12,6 @@
         .mono { font-family: 'DM Mono', monospace; }
         .glass-panel { background: #1E293B; border: 1px solid #334155; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); }
         
-        /* Cacher les flèches des inputs number */
         input[type="number"]::-webkit-inner-spin-button, 
         input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type="number"] { -moz-appearance: textfield; }
@@ -36,7 +35,7 @@
             <div class="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 bg-sky-600 rounded-full blur-[60px] opacity-20 pointer-events-none"></div>
 
             <div class="flex justify-between items-center mb-6">
-                <h1 class="text-2xl font-bold text-white">Swap</h1>
+                <h1 class="text-2xl font-bold text-white">Megaswap</h1>
                 <button class="text-slate-400 hover:text-white transition p-2 bg-slate-800 rounded-xl border border-slate-700">
                     ⚙️
                 </button>
@@ -68,7 +67,7 @@
                     <span class="text-xs text-slate-400 mono">Balance: <span id="bpump-balance">0.00</span></span>
                 </div>
                 <div class="flex items-center justify-between gap-4">
-                    <input type="number" id="bpump-output" placeholder="0.0" readonly class="bg-transparent text-3xl font-bold text-slate-500 w-full outline-none cursor-not-allowed" />
+                    <input type="text" id="bpump-output" placeholder="0.0" readonly class="bg-transparent text-3xl font-bold text-slate-300 w-full outline-none cursor-not-allowed" />
                     <div class="flex items-center gap-2 bg-slate-800 rounded-xl px-4 py-2 border border-slate-600 shrink-0">
                         <span class="text-xl">🚀</span>
                         <span class="font-bold text-white">BPUMP</span>
@@ -79,7 +78,7 @@
             <div id="tx-details" class="hidden flex-col gap-2 mb-6 px-2 text-xs mono text-slate-400">
                 <div class="flex justify-between">
                     <span>Exchange Rate</span>
-                    <span id="rate-display">1 ETH = -- BPUMP</span>
+                    <span id="rate-display">Fetching...</span>
                 </div>
                 <div class="flex justify-between">
                     <span>Network Fee (Base)</span>
@@ -97,37 +96,114 @@
     </div>
 
     <script>
-        const TARGET_CHAIN_ID = '0x2105'; // Base Mainnet (8453)
-        const TOKEN_ADDRESS = '0x1763c231662D7dc4Be28fC169D1056BdCce8cAd6'; // BPUMP
+        // === CONFIGURATION BASE & AERODROME ===
+        const TARGET_CHAIN_ID = '0x2105'; // Base Mainnet
+        
+        // Adresses des contrats
+        const BPUMP_ADDRESS = '0x1763c231662D7dc4Be28fC169D1056BdCce8cAd6';
+        const WETH_ADDRESS = '0x4200000000000000000000000000000000000006'; 
+        
+        // Aerodrome Router & Factory
+        const AERO_ROUTER = '0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43';
+        const AERO_FACTORY = '0x420DD381b31aEf6683db6b902084cB0FFECe40Da';
 
-        // DOM Elements
+        // === ABIs (La carte d'identité des contrats) ===
+        const erc20ABI = [
+            "function balanceOf(address owner) view returns (uint256)",
+            "function decimals() view returns (uint8)"
+        ];
+
+        // L'ABI spécifique d'Aerodrome pour interroger le prix
+        const routerABI = [
+            "function getAmountsOut(uint256 amountIn, tuple(address from, address to, bool stable, address factory)[] routes) view returns (uint256[] amounts)"
+        ];
+
+        // === DOM ELEMENTS ===
         const actionBtn = document.getElementById('action-btn');
         const statusMsg = document.getElementById('status-msg');
         const ethInput = document.getElementById('eth-input');
         const bpumpOutput = document.getElementById('bpump-output');
-        const ethBalance = document.getElementById('eth-balance');
-        const bpumpBalance = document.getElementById('bpump-balance');
+        const ethBalanceDisplay = document.getElementById('eth-balance');
+        const bpumpBalanceDisplay = document.getElementById('bpump-balance');
         const txDetails = document.getElementById('tx-details');
+        const rateDisplay = document.getElementById('rate-display');
 
         let userAddress = null;
+        let provider = null;
+        let debounceTimer; // Pour éviter de spammer la blockchain à chaque frappe
 
-        // Etape 1 : Gestion basique du portefeuille et de l'état des boutons
+        async function initProvider() {
+            if (window.ethereum) {
+                provider = new ethers.BrowserProvider(window.ethereum);
+            }
+        }
+
         async function checkNetwork() {
             if (!window.ethereum) return false;
             const chainId = await window.ethereum.request({ method: 'eth_chainId' });
             return chainId === TARGET_CHAIN_ID;
         }
 
-        async function switchNetwork() {
+        async function fetchBalances() {
+            if (!userAddress || !provider) return;
             try {
-                await window.ethereum.request({
-                    method: 'wallet_switchEthereumChain',
-                    params: [{ chainId: TARGET_CHAIN_ID }],
-                });
-                return true;
+                // Solde ETH
+                const balanceWei = await provider.getBalance(userAddress);
+                const balanceEth = ethers.formatEther(balanceWei);
+                ethBalanceDisplay.innerText = parseFloat(balanceEth).toFixed(4);
+
+                // Solde BPUMP
+                const bpumpContract = new ethers.Contract(BPUMP_ADDRESS, erc20ABI, provider);
+                const bpumpWei = await bpumpContract.balanceOf(userAddress);
+                const bpumpBalance = ethers.formatEther(bpumpWei); // On suppose 18 décimales
+                bpumpBalanceDisplay.innerText = parseFloat(bpumpBalance).toFixed(2);
             } catch (error) {
-                statusMsg.innerText = "❌ Please switch to Base Mainnet.";
-                return false;
+                console.error("Erreur de solde:", error);
+            }
+        }
+
+        // LE COEUR DE L'ORACLE : Interroger Aerodrome
+        async function fetchPrice(amountInEth) {
+            if (!provider) return;
+            
+            try {
+                bpumpOutput.value = "Calculating...";
+                rateDisplay.innerText = "Fetching liquidity...";
+
+                const routerContract = new ethers.Contract(AERO_ROUTER, routerABI, provider);
+                
+                // Convertir l'entrée en Wei (18 zéros)
+                const amountInWei = ethers.parseEther(amountInEth.toString());
+
+                // Création de la "Route" Aerodrome (WETH -> BPUMP)
+                // stable: false (car c'est une pool volatile classique)
+                const route = [{
+                    from: WETH_ADDRESS,
+                    to: BPUMP_ADDRESS,
+                    stable: false,
+                    factory: AERO_FACTORY
+                }];
+
+                // Appel au Router
+                const amountsOut = await routerContract.getAmountsOut(amountInWei, route);
+                
+                // amountsOut est un tableau : [montant_depart, montant_arrivee]
+                const amountReceivedWei = amountsOut[1];
+                const amountReceivedFormatted = ethers.formatEther(amountReceivedWei);
+
+                // Affichage du résultat
+                bpumpOutput.value = parseFloat(amountReceivedFormatted).toFixed(4);
+                
+                // Calcul du ratio pour l'affichage en bas
+                const ratio = parseFloat(amountReceivedFormatted) / parseFloat(amountInEth);
+                rateDisplay.innerText = `1 ETH = ${ratio.toFixed(2)} BPUMP`;
+
+            } catch (error) {
+                console.error("Erreur de prix:", error);
+                bpumpOutput.value = "0.0";
+                rateDisplay.innerText = "No liquidity found or error";
+                statusMsg.style.color = "#EF4444";
+                statusMsg.innerText = "⚠️ Liquidity Pool not found on Aerodrome.";
             }
         }
 
@@ -151,13 +227,27 @@
             }
         }
 
+        // Ecoute de l'input utilisateur avec délai (Debounce) pour ne pas spammer la blockchain
+        ethInput.addEventListener('input', () => {
+            const val = ethInput.value;
+            updateUI();
+            
+            clearTimeout(debounceTimer);
+            if (val > 0) {
+                debounceTimer = setTimeout(() => {
+                    fetchPrice(val);
+                }, 500); // Attend 500ms après la dernière frappe pour lancer le calcul
+            } else {
+                bpumpOutput.value = "";
+            }
+        });
+
         actionBtn.addEventListener('click', async () => {
             if (!window.ethereum) {
                 statusMsg.innerText = "🦊 Please install MetaMask.";
                 return;
             }
 
-            // Phase de connexion
             if (!userAddress) {
                 try {
                     actionBtn.innerText = "Connecting...";
@@ -165,48 +255,43 @@
                     userAddress = accounts[0];
                     
                     const isOnBase = await checkNetwork();
-                    if (!isOnBase) await switchNetwork();
+                    if (!isOnBase) {
+                        await window.ethereum.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ chainId: TARGET_CHAIN_ID }],
+                        });
+                    }
+                    
+                    await initProvider();
+                    await fetchBalances(); // Charge les soldes
                     
                     statusMsg.style.color = "#10B981";
                     statusMsg.innerText = `🟢 Connected: ${userAddress.substring(0,6)}...${userAddress.substring(38)}`;
                     updateUI();
                 } catch (e) {
                     statusMsg.style.color = "#EF4444";
-                    statusMsg.innerText = "❌ Connection rejected.";
+                    statusMsg.innerText = "❌ Connection rejected or network error.";
                     updateUI();
                 }
                 return;
             }
 
-            // Phase de Swap (Sera développée à l'Étape 3)
             if (ethInput.value > 0) {
                 statusMsg.style.color = "#38BDF8";
-                statusMsg.innerText = "⏳ Swap engine not yet connected to Aerodrome Router...";
+                statusMsg.innerText = "⏳ Swap feature coming in Step 3...";
             }
         });
 
-        // Détecter les frappes dans l'input ETH pour mettre à jour le bouton
-        ethInput.addEventListener('input', () => {
-            // (Sera développé à l'Étape 2 : Interrogation du prix en direct)
-            if (ethInput.value > 0) {
-                bpumpOutput.value = "⏳ ..."; 
-            } else {
-                bpumpOutput.value = "";
-            }
-            updateUI();
-        });
-
-        // Reconnexion automatique si déjà autorisé
         window.addEventListener('load', async () => {
+            await initProvider();
             if (window.ethereum) {
                 const accounts = await window.ethereum.request({ method: 'eth_accounts' });
                 if (accounts.length > 0) {
                     userAddress = accounts[0];
                     statusMsg.style.color = "#10B981";
                     statusMsg.innerText = `🟢 Connected: ${userAddress.substring(0,6)}...${userAddress.substring(38)}`;
-                    checkNetwork().then(isOnBase => {
-                        if(!isOnBase) statusMsg.innerText += " (Wrong Network)";
-                    });
+                    
+                    await fetchBalances();
                     updateUI();
                 }
             }
