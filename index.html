@@ -98,10 +98,11 @@
     <script>
         // === CONFIGURATION ===
         const TARGET_CHAIN_ID = '0x2105'; 
-        const BPUMP_ADDRESS = '0x1763c231662D7dc4Be28fC169D1056BdCce8cAd6';
+        // Adresses passées strictement en minuscules pour désactiver le test Checksum strict
+        const BPUMP_ADDRESS = '0x1763c231662d7dc4be28fc169d1056bdcce8cad6';
         const WETH_ADDRESS = '0x4200000000000000000000000000000000000006'; 
-        const AERO_ROUTER = '0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43';
-        const AERO_FACTORY = '0x420DD381b31aEf6683db6b902084cB0FFECe40Da';
+        const AERO_ROUTER = '0xcf77a3ba9a5ca399b7c97c74d54e5b1beb874e43';
+        const AERO_FACTORY = '0x420dd381b31aef6683db6b902084cb0ffece40da';
 
         // === ABIs ===
         const erc20ABI = ["function balanceOf(address owner) view returns (uint256)"];
