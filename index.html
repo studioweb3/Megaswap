@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Swap | Based Pump (BPUMP)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700&family=DM+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <style>
+        body { background-color: #0F172A; color: #F1F5F9; font-family: 'Syne', sans-serif; overflow-x: hidden; touch-action: manipulation; }
+        .mono { font-family: 'DM Mono', monospace; }
+        .glass-panel { background: #1E293B; border: 1px solid #334155; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); }
+        
+        /* Cacher les flèches des inputs number */
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type="number"] { -moz-appearance: textfield; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 relative">
+
+    <nav class="absolute top-0 left-0 w-full p-4 md:p-6 flex justify-between items-center z-40 bg-slate-900/50 backdrop-blur-md border-b border-slate-800">
+        <div class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-indigo-400 flex items-center gap-2">
+            🚀 Studio Web3
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-full px-3 py-1 text-xs font-bold flex items-center gap-1">
+                <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> Base Mainnet
+            </span>
+        </div>
+    </nav>
+
+    <div class="w-full max-w-md mt-16">
+        <div class="glass-panel p-6 rounded-3xl relative overflow-hidden">
+            <div class="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 bg-sky-600 rounded-full blur-[60px] opacity-20 pointer-events-none"></div>
+
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-2xl font-bold text-white">Swap</h1>
+                <button class="text-slate-400 hover:text-white transition p-2 bg-slate-800 rounded-xl border border-slate-700">
+                    ⚙️
+                </button>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 mb-2 focus-within:border-sky-500/50 transition">
+                <div class="flex justify-between mb-2">
+                    <span class="text-xs text-slate-400 uppercase tracking-widest font-bold">You pay</span>
+                    <span class="text-xs text-slate-400 mono">Balance: <span id="eth-balance">0.00</span></span>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                    <input type="number" id="eth-input" placeholder="0.0" class="bg-transparent text-3xl font-bold text-white w-full outline-none" />
+                    <div class="flex items-center gap-2 bg-slate-800 rounded-xl px-4 py-2 border border-slate-600 shrink-0">
+                        <img src="https://assets.coingecko.com/coins/images/279/small/ethereum.png" class="w-6 h-6 rounded-full" alt="ETH">
+                        <span class="font-bold text-white">ETH</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-center -my-5 relative z-10">
+                <div class="bg-slate-800 border-4 border-[#1E293B] rounded-xl p-2 text-sky-400 hover:bg-slate-700 transition cursor-pointer">
+                    ⬇️
+                </div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 mb-6 mt-2">
+                <div class="flex justify-between mb-2">
+                    <span class="text-xs text-slate-400 uppercase tracking-widest font-bold">You receive</span>
+                    <span class="text-xs text-slate-400 mono">Balance: <span id="bpump-balance">0.00</span></span>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                    <input type="number" id="bpump-output" placeholder="0.0" readonly class="bg-transparent text-3xl font-bold text-slate-500 w-full outline-none cursor-not-allowed" />
+                    <div class="flex items-center gap-2 bg-slate-800 rounded-xl px-4 py-2 border border-slate-600 shrink-0">
+                        <span class="text-xl">🚀</span>
+                        <span class="font-bold text-white">BPUMP</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tx-details" class="hidden flex-col gap-2 mb-6 px-2 text-xs mono text-slate-400">
+                <div class="flex justify-between">
+                    <span>Exchange Rate</span>
+                    <span id="rate-display">1 ETH = -- BPUMP</span>
+                </div>
+                <div class="flex justify-between">
+                    <span>Network Fee (Base)</span>
+                    <span class="text-sky-400">~$0.01</span>
+                </div>
+            </div>
+
+            <button id="action-btn" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-4 px-4 rounded-xl transition shadow-lg shadow-sky-500/20 text-lg uppercase tracking-wider">
+                Connect Wallet
+            </button>
+            <p id="status-msg" class="text-center mono text-xs text-sky-400 mt-4 h-4"></p>
+        </div>
+        
+        <p class="text-center text-slate-500 text-xs mt-6 mono">Powered by Aerodrome Liquidity • 0x17...cAd6</p>
+    </div>
+
+    <script>
+        const TARGET_CHAIN_ID = '0x2105'; // Base Mainnet (8453)
+        const TOKEN_ADDRESS = '0x1763c231662D7dc4Be28fC169D1056BdCce8cAd6'; // BPUMP
+
+        // DOM Elements
+        const actionBtn = document.getElementById('action-btn');
+        const statusMsg = document.getElementById('status-msg');
+        const ethInput = document.getElementById('eth-input');
+        const bpumpOutput = document.getElementById('bpump-output');
+        const ethBalance = document.getElementById('eth-balance');
+        const bpumpBalance = document.getElementById('bpump-balance');
+        const txDetails = document.getElementById('tx-details');
+
+        let userAddress = null;
+
+        // Etape 1 : Gestion basique du portefeuille et de l'état des boutons
+        async function checkNetwork() {
+            if (!window.ethereum) return false;
+            const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+            return chainId === TARGET_CHAIN_ID;
+        }
+
+        async function switchNetwork() {
+            try {
+                await window.ethereum.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: TARGET_CHAIN_ID }],
+                });
+                return true;
+            } catch (error) {
+                statusMsg.innerText = "❌ Please switch to Base Mainnet.";
+                return false;
+            }
+        }
+
+        function updateUI() {
+            if (!userAddress) {
+                actionBtn.innerText = "Connect Wallet";
+                actionBtn.className = "w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-4 px-4 rounded-xl transition shadow-lg shadow-sky-500/20 text-lg uppercase tracking-wider";
+                return;
+            }
+
+            if (ethInput.value > 0) {
+                actionBtn.innerText = "Swap";
+                actionBtn.className = "w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-4 px-4 rounded-xl transition shadow-lg shadow-blue-500/30 text-lg uppercase tracking-wider";
+                txDetails.classList.remove('hidden');
+                txDetails.classList.add('flex');
+            } else {
+                actionBtn.innerText = "Enter an amount";
+                actionBtn.className = "w-full bg-slate-700 text-slate-400 font-bold py-4 px-4 rounded-xl cursor-not-allowed text-lg uppercase tracking-wider";
+                txDetails.classList.add('hidden');
+                txDetails.classList.remove('flex');
+            }
+        }
+
+        actionBtn.addEventListener('click', async () => {
+            if (!window.ethereum) {
+                statusMsg.innerText = "🦊 Please install MetaMask.";
+                return;
+            }
+
+            // Phase de connexion
+            if (!userAddress) {
+                try {
+                    actionBtn.innerText = "Connecting...";
+                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    userAddress = accounts[0];
+                    
+                    const isOnBase = await checkNetwork();
+                    if (!isOnBase) await switchNetwork();
+                    
+                    statusMsg.style.color = "#10B981";
+                    statusMsg.innerText = `🟢 Connected: ${userAddress.substring(0,6)}...${userAddress.substring(38)}`;
+                    updateUI();
+                } catch (e) {
+                    statusMsg.style.color = "#EF4444";
+                    statusMsg.innerText = "❌ Connection rejected.";
+                    updateUI();
+                }
+                return;
+            }
+
+            // Phase de Swap (Sera développée à l'Étape 3)
+            if (ethInput.value > 0) {
+                statusMsg.style.color = "#38BDF8";
+                statusMsg.innerText = "⏳ Swap engine not yet connected to Aerodrome Router...";
+            }
+        });
+
+        // Détecter les frappes dans l'input ETH pour mettre à jour le bouton
+        ethInput.addEventListener('input', () => {
+            // (Sera développé à l'Étape 2 : Interrogation du prix en direct)
+            if (ethInput.value > 0) {
+                bpumpOutput.value = "⏳ ..."; 
+            } else {
+                bpumpOutput.value = "";
+            }
+            updateUI();
+        });
+
+        // Reconnexion automatique si déjà autorisé
+        window.addEventListener('load', async () => {
+            if (window.ethereum) {
+                const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                if (accounts.length > 0) {
+                    userAddress = accounts[0];
+                    statusMsg.style.color = "#10B981";
+                    statusMsg.innerText = `🟢 Connected: ${userAddress.substring(0,6)}...${userAddress.substring(38)}`;
+                    checkNetwork().then(isOnBase => {
+                        if(!isOnBase) statusMsg.innerText += " (Wrong Network)";
+                    });
+                    updateUI();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
