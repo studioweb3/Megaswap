@@ -15,6 +15,9 @@
         input[type="number"]::-webkit-inner-spin-button, 
         input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type="number"] { -moz-appearance: textfield; }
+        
+        .flip-anim { transition: transform 0.3s ease; }
+        .flipped { transform: rotate(180deg); }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 relative">
@@ -36,27 +39,25 @@
 
             <div class="flex justify-between items-center mb-6">
                 <h1 class="text-2xl font-bold text-white">Megaswap</h1>
-                <button class="text-slate-400 hover:text-white transition p-2 bg-slate-800 rounded-xl border border-slate-700">
-                    ⚙️
-                </button>
+                <button class="text-slate-400 hover:text-white transition p-2 bg-slate-800 rounded-xl border border-slate-700">⚙️</button>
             </div>
 
             <div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 mb-2 focus-within:border-sky-500/50 transition">
                 <div class="flex justify-between mb-2">
                     <span class="text-xs text-slate-400 uppercase tracking-widest font-bold">You pay</span>
-                    <span class="text-xs text-slate-400 mono">Balance: <span id="eth-balance">0.00</span></span>
+                    <span class="text-xs text-slate-400 mono">Balance: <span id="top-balance">0.00</span></span>
                 </div>
                 <div class="flex items-center justify-between gap-4">
-                    <input type="number" id="eth-input" placeholder="0.0" class="bg-transparent text-3xl font-bold text-white w-full outline-none" />
-                    <div class="flex items-center gap-2 bg-slate-800 rounded-xl px-4 py-2 border border-slate-600 shrink-0">
-                        <img src="https://assets.coingecko.com/coins/images/279/small/ethereum.png" class="w-6 h-6 rounded-full" alt="ETH">
-                        <span class="font-bold text-white">ETH</span>
+                    <input type="number" id="top-input" placeholder="0.0" class="bg-transparent text-3xl font-bold text-white w-full outline-none" />
+                    <div class="flex items-center gap-2 bg-slate-800 rounded-xl px-4 py-2 border border-slate-600 shrink-0 min-w-[110px] justify-center">
+                        <span id="top-icon" class="text-xl"><img src="https://assets.coingecko.com/coins/images/279/small/ethereum.png" class="w-6 h-6 rounded-full inline" alt="ETH"></span>
+                        <span id="top-symbol" class="font-bold text-white">ETH</span>
                     </div>
                 </div>
             </div>
 
             <div class="flex justify-center -my-5 relative z-10">
-                <div class="bg-slate-800 border-4 border-[#1E293B] rounded-xl p-2 text-sky-400 hover:bg-slate-700 transition cursor-pointer">
+                <div id="btn-flip" class="bg-slate-800 border-4 border-[#1E293B] rounded-xl p-2 text-sky-400 hover:bg-slate-700 transition cursor-pointer flip-anim shadow-lg">
                     ⬇️
                 </div>
             </div>
@@ -64,13 +65,13 @@
             <div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 mb-6 mt-2">
                 <div class="flex justify-between mb-2">
                     <span class="text-xs text-slate-400 uppercase tracking-widest font-bold">You receive</span>
-                    <span class="text-xs text-slate-400 mono">Balance: <span id="bpump-balance">0.00</span></span>
+                    <span class="text-xs text-slate-400 mono">Balance: <span id="bottom-balance">0.00</span></span>
                 </div>
                 <div class="flex items-center justify-between gap-4">
-                    <input type="text" id="bpump-output" placeholder="0.0" readonly class="bg-transparent text-3xl font-bold text-emerald-400 w-full outline-none cursor-not-allowed" />
-                    <div class="flex items-center gap-2 bg-slate-800 rounded-xl px-4 py-2 border border-slate-600 shrink-0">
-                        <span class="text-xl">🚀</span>
-                        <span class="font-bold text-white">BPUMP</span>
+                    <input type="text" id="bottom-output" placeholder="0.0" readonly class="bg-transparent text-3xl font-bold text-emerald-400 w-full outline-none cursor-not-allowed" />
+                    <div class="flex items-center gap-2 bg-slate-800 rounded-xl px-4 py-2 border border-slate-600 shrink-0 min-w-[110px] justify-center">
+                        <span id="bottom-icon" class="text-xl">🚀</span>
+                        <span id="bottom-symbol" class="font-bold text-white">BPUMP</span>
                     </div>
                 </div>
             </div>
@@ -98,33 +99,56 @@
     <script>
         // === CONFIGURATION ===
         const TARGET_CHAIN_ID = '0x2105'; 
-        // Adresses passées strictement en minuscules pour désactiver le test Checksum strict
         const BPUMP_ADDRESS = '0x1763c231662d7dc4be28fc169d1056bdcce8cad6';
         const WETH_ADDRESS = '0x4200000000000000000000000000000000000006'; 
         const AERO_ROUTER = '0xcf77a3ba9a5ca399b7c97c74d54e5b1beb874e43';
         const AERO_FACTORY = '0x420dd381b31aef6683db6b902084cb0ffece40da';
 
         // === ABIs ===
-        const erc20ABI = ["function balanceOf(address owner) view returns (uint256)"];
+        // Ajout de 'allowance' et 'approve' pour autoriser la vente du BPUMP
+        const erc20ABI = [
+            "function balanceOf(address owner) view returns (uint256)",
+            "function allowance(address owner, address spender) view returns (uint256)",
+            "function approve(address spender, uint256 amount) returns (bool)"
+        ];
+        
+        // Ajout de 'swapExactTokensForETH' pour la vente
         const routerABI = [
             "function getAmountsOut(uint256 amountIn, tuple(address from, address to, bool stable, address factory)[] routes) view returns (uint256[] amounts)",
-            "function swapExactETHForTokens(uint amountOutMin, tuple(address from, address to, bool stable, address factory)[] routes, address to, uint deadline) payable returns (uint[] amounts)"
+            "function swapExactETHForTokens(uint amountOutMin, tuple(address from, address to, bool stable, address factory)[] routes, address to, uint deadline) payable returns (uint[] amounts)",
+            "function swapExactTokensForETH(uint amountIn, uint amountOutMin, tuple(address from, address to, bool stable, address factory)[] routes, address to, uint deadline) returns (uint[] amounts)"
         ];
 
-        // === VARIABLES ===
+        // === DOM ELEMENTS ===
         const actionBtn = document.getElementById('action-btn');
         const statusMsg = document.getElementById('status-msg');
-        const ethInput = document.getElementById('eth-input');
-        const bpumpOutput = document.getElementById('bpump-output');
-        const ethBalanceDisplay = document.getElementById('eth-balance');
-        const bpumpBalanceDisplay = document.getElementById('bpump-balance');
+        const topInput = document.getElementById('top-input');
+        const bottomOutput = document.getElementById('bottom-output');
+        const topBalanceDisplay = document.getElementById('top-balance');
+        const bottomBalanceDisplay = document.getElementById('bottom-balance');
         const txDetails = document.getElementById('tx-details');
         const rateDisplay = document.getElementById('rate-display');
+        
+        // Elements dynamiques pour le Flip
+        const btnFlip = document.getElementById('btn-flip');
+        const topIcon = document.getElementById('top-icon');
+        const topSymbol = document.getElementById('top-symbol');
+        const bottomIcon = document.getElementById('bottom-icon');
+        const bottomSymbol = document.getElementById('bottom-symbol');
 
+        // === ETAT GLOBAL ===
         let userAddress = null;
         let provider = null;
         let debounceTimer;
-        let currentAmountReceivedWei = null; // Sauvegarde du prix pour le Swap
+        let currentAmountReceivedWei = null; 
+        
+        // true = Achat (ETH -> BPUMP), false = Vente (BPUMP -> ETH)
+        let isEthToBpump = true; 
+        
+        let balances = { ETH: "0.00", BPUMP: "0.00" };
+
+        const ETH_HTML = `<img src="https://assets.coingecko.com/coins/images/279/small/ethereum.png" class="w-6 h-6 rounded-full inline" alt="ETH">`;
+        const BPUMP_HTML = `🚀`;
 
         async function initProvider() {
             if (window.ethereum) provider = new ethers.BrowserProvider(window.ethereum);
@@ -140,141 +164,212 @@
             if (!userAddress || !provider) return;
             try {
                 const balanceWei = await provider.getBalance(userAddress);
-                ethBalanceDisplay.innerText = parseFloat(ethers.formatEther(balanceWei)).toFixed(4);
+                balances.ETH = parseFloat(ethers.formatEther(balanceWei)).toFixed(4);
 
                 const bpumpContract = new ethers.Contract(BPUMP_ADDRESS, erc20ABI, provider);
                 const bpumpWei = await bpumpContract.balanceOf(userAddress);
-                bpumpBalanceDisplay.innerText = parseFloat(ethers.formatEther(bpumpWei)).toFixed(2);
+                balances.BPUMP = parseFloat(ethers.formatEther(bpumpWei)).toFixed(2);
+                
+                updateUIBalances();
             } catch (error) {
                 console.error("Balance Error:", error);
             }
         }
 
+        function updateUIBalances() {
+            if (isEthToBpump) {
+                topBalanceDisplay.innerText = balances.ETH;
+                bottomBalanceDisplay.innerText = balances.BPUMP;
+            } else {
+                topBalanceDisplay.innerText = balances.BPUMP;
+                bottomBalanceDisplay.innerText = balances.ETH;
+            }
+        }
+
         // ==========================================
-        // 1. L'ORACLE (Lecture du prix)
+        // LA BASCULE (FLIP)
         // ==========================================
-        async function fetchPrice(amountInEth) {
+        btnFlip.addEventListener('click', () => {
+            // Animation visuelle
+            btnFlip.classList.toggle('flipped');
+            
+            // Inverser l'état
+            isEthToBpump = !isEthToBpump;
+            
+            // Mettre à jour les logos et textes
+            if (isEthToBpump) {
+                topIcon.innerHTML = ETH_HTML; topSymbol.innerText = "ETH";
+                bottomIcon.innerHTML = BPUMP_HTML; bottomSymbol.innerText = "BPUMP";
+            } else {
+                topIcon.innerHTML = BPUMP_HTML; topSymbol.innerText = "BPUMP";
+                bottomIcon.innerHTML = ETH_HTML; bottomSymbol.innerText = "ETH";
+            }
+            
+            // Réinitialiser les champs et mettre à jour les soldes
+            topInput.value = "";
+            bottomOutput.value = "";
+            currentAmountReceivedWei = null;
+            
+            updateUIBalances();
+            updateUI();
+        });
+
+        // ==========================================
+        // 1. L'ORACLE (Bidirectionnel)
+        // ==========================================
+        async function fetchPrice(amountIn) {
             if (!provider) return;
             try {
-                bpumpOutput.value = "Calculating...";
+                bottomOutput.value = "Calculating...";
                 rateDisplay.innerText = "Fetching liquidity...";
                 currentAmountReceivedWei = null;
 
                 const routerContract = new ethers.Contract(AERO_ROUTER, routerABI, provider);
-                const amountInWei = ethers.parseEther(amountInEth.toString());
+                const amountInWei = ethers.parseEther(amountIn.toString());
 
-                // FIX : Format de tableau strict exigé par Ethers pour la structure Route
-                const route = [[WETH_ADDRESS, BPUMP_ADDRESS, false, AERO_FACTORY]];
+                // La Route change en fonction du sens du swap !
+                let route;
+                if (isEthToBpump) {
+                    route = [[WETH_ADDRESS, BPUMP_ADDRESS, false, AERO_FACTORY]];
+                } else {
+                    route = [[BPUMP_ADDRESS, WETH_ADDRESS, false, AERO_FACTORY]];
+                }
 
                 const amountsOut = await routerContract.getAmountsOut(amountInWei, route);
                 currentAmountReceivedWei = amountsOut[1]; 
                 
                 const amountReceivedFormatted = ethers.formatEther(currentAmountReceivedWei);
-                bpumpOutput.value = parseFloat(amountReceivedFormatted).toFixed(2);
+                bottomOutput.value = parseFloat(amountReceivedFormatted).toFixed(4);
                 
-                const ratio = parseFloat(amountReceivedFormatted) / parseFloat(amountInEth);
-                rateDisplay.innerText = `1 ETH = ${ratio.toFixed(0)} BPUMP`;
+                const ratio = parseFloat(amountReceivedFormatted) / parseFloat(amountIn);
+                
+                if (isEthToBpump) rateDisplay.innerText = `1 ETH = ${ratio.toFixed(0)} BPUMP`;
+                else rateDisplay.innerText = `1 BPUMP = ${ratio.toFixed(8)} ETH`;
                 
                 statusMsg.style.color = "#10B981";
                 statusMsg.innerText = "✅ Ready to swap!";
+                updateUI(); // Met à jour le bouton pour vérifier si un Approve est nécessaire
             } catch (error) {
                 console.error("Oracle Error:", error);
-                bpumpOutput.value = "0.0";
+                bottomOutput.value = "0.0";
                 rateDisplay.innerText = "Error calculating price";
                 statusMsg.style.color = "#EF4444";
-                const errReason = error.reason || error.message || "Unknown error";
-                statusMsg.innerText = `⚠️ ${errReason.substring(0, 30)}...`;
+                statusMsg.innerText = `⚠️ No liquidity route found.`;
             }
         }
 
         // ==========================================
-        // 2. LE SWAP (L'Achat sur la blockchain)
+        // 2. LE SWAP (Bidirectionnel & Sécurisé)
         // ==========================================
-        async function executeSwap(amountInEth) {
+        async function executeSwap(amountIn) {
             if (!provider || !currentAmountReceivedWei) return;
             try {
                 actionBtn.disabled = true;
-                actionBtn.innerText = "⏳ Confirm in MetaMask...";
-                statusMsg.style.color = "#38BDF8";
-                statusMsg.innerText = "Please confirm the transaction...";
-
                 const signer = await provider.getSigner();
                 const routerContract = new ethers.Contract(AERO_ROUTER, routerABI, signer);
-                
-                const amountInWei = ethers.parseEther(amountInEth.toString());
-                
-                // Protection Slippage (5%)
-                // On accepte de recevoir jusqu'à 5% de moins que prévu si le prix bouge
-                const amountOutMinWei = (currentAmountReceivedWei * 95n) / 100n;
-                
-                const route = [[WETH_ADDRESS, BPUMP_ADDRESS, false, AERO_FACTORY]];
-                
-                // Deadline : 20 minutes (standard DEX)
+                const amountInWei = ethers.parseEther(amountIn.toString());
+                const amountOutMinWei = (currentAmountReceivedWei * 95n) / 100n; // Slippage 5%
                 const deadline = Math.floor(Date.now() / 1000) + (60 * 20);
 
-                const tx = await routerContract.swapExactETHForTokens(
-                    amountOutMinWei,
-                    route,
-                    userAddress,
-                    deadline,
-                    { value: amountInWei }
-                );
+                let tx;
+
+                if (isEthToBpump) {
+                    // ACHAT CLASSIQUE (ETH -> BPUMP)
+                    statusMsg.style.color = "#38BDF8";
+                    statusMsg.innerText = "Please confirm the ETH transaction...";
+                    actionBtn.innerText = "⏳ Confirming...";
+                    
+                    const route = [[WETH_ADDRESS, BPUMP_ADDRESS, false, AERO_FACTORY]];
+                    tx = await routerContract.swapExactETHForTokens(
+                        amountOutMinWei, route, userAddress, deadline, { value: amountInWei }
+                    );
+                } else {
+                    // VENTE (BPUMP -> ETH) : Nécessite un Approve !
+                    const bpumpContract = new ethers.Contract(BPUMP_ADDRESS, erc20ABI, signer);
+                    const allowance = await bpumpContract.allowance(userAddress, AERO_ROUTER);
+
+                    if (allowance < amountInWei) {
+                        statusMsg.style.color = "#F59E0B";
+                        statusMsg.innerText = "Step 1/2: Approve BPUMP for trading...";
+                        actionBtn.innerText = "⏳ Approving...";
+                        
+                        const txApprove = await bpumpContract.approve(AERO_ROUTER, ethers.MaxUint256);
+                        await txApprove.wait();
+                    }
+
+                    statusMsg.style.color = "#38BDF8";
+                    statusMsg.innerText = "Step 2/2: Confirming the Swap...";
+                    actionBtn.innerText = "⏳ Swapping...";
+                    
+                    const route = [[BPUMP_ADDRESS, WETH_ADDRESS, false, AERO_FACTORY]];
+                    tx = await routerContract.swapExactTokensForETH(
+                        amountInWei, amountOutMinWei, route, userAddress, deadline
+                    );
+                }
 
                 statusMsg.innerText = "⏳ Swapping on Base Mainnet...";
-                actionBtn.innerText = "Processing...";
-                
-                await tx.wait(); // On attend que la blockchain valide
+                await tx.wait(); 
 
                 statusMsg.style.color = "#10B981";
                 statusMsg.innerText = "🎉 Swap Successful!";
-                ethInput.value = "";
-                bpumpOutput.value = "";
+                topInput.value = ""; bottomOutput.value = "";
                 
-                await fetchBalances(); // Met à jour les compteurs
+                await fetchBalances(); 
                 updateUI();
                 
             } catch (error) {
                 console.error("Swap Error:", error);
                 statusMsg.style.color = "#EF4444";
-                if(error.code === "ACTION_REJECTED") {
-                    statusMsg.innerText = "❌ Transaction cancelled by user.";
-                } else {
-                    statusMsg.innerText = "❌ Swap failed (Price impact too high?)";
-                }
+                if(error.code === "ACTION_REJECTED") statusMsg.innerText = "❌ Transaction cancelled by user.";
+                else statusMsg.innerText = "❌ Swap failed (Price impact too high?)";
             } finally {
                 actionBtn.disabled = false;
                 updateUI();
             }
         }
 
-        function updateUI() {
+        async function updateUI() {
             if (!userAddress) {
                 actionBtn.innerText = "Connect Wallet";
                 actionBtn.className = "w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-4 px-4 rounded-xl transition shadow-lg shadow-sky-500/20 text-lg uppercase tracking-wider";
                 return;
             }
 
-            if (ethInput.value > 0) {
+            if (topInput.value > 0) {
+                txDetails.classList.remove('hidden'); txDetails.classList.add('flex');
+                
+                // Si on vend du BPUMP, on vérifie si on a besoin du bouton "Approve"
+                if (!isEthToBpump && provider) {
+                    try {
+                        const bpumpContract = new ethers.Contract(BPUMP_ADDRESS, erc20ABI, provider);
+                        const allowance = await bpumpContract.allowance(userAddress, AERO_ROUTER);
+                        const amountInWei = ethers.parseEther(topInput.value.toString());
+                        
+                        if (allowance < amountInWei) {
+                            actionBtn.innerText = "Approve BPUMP";
+                            actionBtn.className = "w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-bold py-4 px-4 rounded-xl transition shadow-lg text-lg uppercase tracking-wider";
+                            return;
+                        }
+                    } catch(e) {}
+                }
+
                 actionBtn.innerText = "Swap";
                 actionBtn.className = "w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-4 px-4 rounded-xl transition shadow-lg shadow-blue-500/30 text-lg uppercase tracking-wider shadow-[0_0_20px_rgba(59,130,246,0.5)]";
-                txDetails.classList.remove('hidden');
-                txDetails.classList.add('flex');
             } else {
                 actionBtn.innerText = "Enter an amount";
                 actionBtn.className = "w-full bg-slate-700 text-slate-400 font-bold py-4 px-4 rounded-xl cursor-not-allowed text-lg uppercase tracking-wider";
-                txDetails.classList.add('hidden');
-                txDetails.classList.remove('flex');
+                txDetails.classList.add('hidden'); txDetails.classList.remove('flex');
             }
         }
 
-        ethInput.addEventListener('input', () => {
-            const val = ethInput.value;
+        topInput.addEventListener('input', () => {
+            const val = topInput.value;
             updateUI();
             clearTimeout(debounceTimer);
             if (val > 0) {
                 debounceTimer = setTimeout(() => { fetchPrice(val); }, 500);
             } else {
-                bpumpOutput.value = "";
+                bottomOutput.value = "";
                 currentAmountReceivedWei = null;
             }
         });
@@ -307,8 +402,8 @@
                 return;
             }
 
-            if (ethInput.value > 0 && currentAmountReceivedWei) {
-                executeSwap(ethInput.value);
+            if (topInput.value > 0 && currentAmountReceivedWei) {
+                executeSwap(topInput.value);
             }
         });
 
