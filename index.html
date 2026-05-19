@@ -426,9 +426,15 @@
             if (isEthToBpump) {
                 topIcon.innerHTML = ETH_HTML; topSymbol.innerText = "ETH";
                 bottomIcon.innerHTML = BPUMP_HTML; bottomSymbol.innerText = "BPUMP";
+                // On met à jour les affichages des soldes correspondants
+                topBalanceDisplay.innerText = balances.ETH;
+                bottomBalanceDisplay.innerText = balances.BPUMP;
             } else {
                 topIcon.innerHTML = BPUMP_HTML; topSymbol.innerText = "BPUMP";
                 bottomIcon.innerHTML = ETH_HTML; bottomSymbol.innerText = "ETH";
+                // On inverse l'affichage des soldes
+                topBalanceDisplay.innerText = balances.BPUMP;
+                bottomBalanceDisplay.innerText = balances.ETH;
             }
             resetInputs();
         });
