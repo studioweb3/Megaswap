@@ -461,10 +461,19 @@
 
                     const amountsOut = await routerContract.getAmountsOut(amountInWei, route);
                     currentAmountReceivedWei = amountsOut[1]; 
-                    bottomOutput.value = parseFloat(ethers.formatEther(currentAmountReceivedWei)).toFixed(isEthToBpump ? 2 : 4);
                     
-                    const ratio = parseFloat(bottomOutput.value) / parseFloat(amountIn);
-                    rateDisplay.innerText = isEthToBpump ? `1 ETH = ${ratio.toFixed(0)} BPUMP` : `1 BPUMP = ${ratio.toFixed(6)} ETH`;
+                    // MAJ : On passe à 6 décimales pour l'ETH (au lieu de 4) pour afficher le montant précis
+                    bottomOutput.value = parseFloat(ethers.formatEther(currentAmountReceivedWei)).toFixed(isEthToBpump ? 2 : 6);
+                    
+                    // MAJ : On affiche toujours le taux sous la forme "1 ETH = X BPUMP", c'est beaucoup plus lisible !
+                    if (isEthToBpump) {
+                        const ratio = parseFloat(bottomOutput.value) / parseFloat(amountIn);
+                        rateDisplay.innerText = `1 ETH = ${ratio.toFixed(0)} BPUMP`;
+                    } else {
+                        const inverseRatio = parseFloat(amountIn) / parseFloat(bottomOutput.value);
+                        rateDisplay.innerText = `1 ETH = ${inverseRatio.toFixed(0)} BPUMP`;
+                    }
+                    
                     statusMsg.style.color = "#10B981"; statusMsg.innerText = "✅ Ready to swap!";
                     updateUI();
                 } catch (e) {
